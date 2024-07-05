@@ -1,5 +1,13 @@
 import asyncio
 from typing import List, Self, Optional
+import io
+
+class SyscallsAarch64:
+	openat = 56
+	close = 57
+	getdents64 = 61
+	read = 63
+	write = 64
 
 class BackdClientSession():
 	def __init__(self, rhost:str, rport:int) -> None:
@@ -90,13 +98,57 @@ class BackdClientSession():
 	async def __aexit__(self, exc_type, exc_val, exc_tb) -> Optional[bool]:
 		await self.shutdown()
 
+async def listdir(sess: BackdClientSession, dir_path: str):
+	dfd = await sess.cmd_syscall_helper(SyscallsAarch64.openat, 0, dir_path, 0, 0)
+	
+	# get all(?) the dirents
+	# XXX: fails if not all read in one go
+	dentlen = await sess.cmd_syscall_helper(SyscallsAarch64.getdents64, dfd, sess.buf_addr, sess.buf_len)
+	dentbuf = await sess.cmd_read_mem(sess.buf_addr, dentlen)
+	entries = []
+	off = 0
+	while off < len(dentbuf):
+		reclen = int.from_bytes(dentbuf[off+8+8:off+8+8+2], "little")
+		name = dentbuf[off+8+8+2+1:off+reclen-2].rstrip(b"\x00").decode()
+		entries.append(name)
+		off += reclen
+
+	# close
+	await sess.cmd_syscall_helper(SyscallsAarch64.close, dfd)
+
+	return entries
+
+async def pgrep(sess: BackdClientSession, name: str) -> int:
+	name_bytes = name.encode()
+	proc_entries = await listdir(sess, "/proc")
+	for proc_entry in proc_entries:
+		if not proc_entry.isdecimal():
+			continue
+		cmdline_path = f"/proc/{proc_entry}/cmdline"
+		cmdline_fd = await sess.cmd_syscall_helper(SyscallsAarch64.openat, 0, cmdline_path, 0, 0)
+		if cmdline_fd < 0:
+			continue
+		cmdline_len = await sess.cmd_syscall_helper(SyscallsAarch64.read, cmdline_fd, sess.buf_addr, sess.buf_len)
+		if cmdline_len < 0:
+			await sess.cmd_syscall_helper(SyscallsAarch64.close, cmdline_fd)
+			continue
+		cmdline = await sess.cmd_read_mem(sess.buf_addr, cmdline_len)
+		await sess.cmd_syscall_helper(SyscallsAarch64.close, cmdline_fd)
+		argv = cmdline.split(b"\x00")
+		if name_bytes in argv[0]:
+			return int(proc_entry)
+	raise FileNotFoundError
 
 async def main():
 	async with BackdClientSession("127.0.0.1", 31337) as sess:
 		print("connected")
+
 		hello = b"hello, world!\n"
-		res = await sess.cmd_syscall_helper(64, 1, hello, len(hello))
+		res = await sess.cmd_syscall_helper(SyscallsAarch64.write, 1, hello, len(hello))
 		print("res:", res)
+
+		pid = await pgrep(sess, "firefox")
+		print("found", pid)
 
 if __name__ == "__main__":
 	asyncio.run(main())
