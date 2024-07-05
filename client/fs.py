@@ -7,8 +7,7 @@ async def listdir(sess: BackdClientSession, dir_path: str) -> List[str]:
 
 	# get all the dirents
 	while True:
-		await sess.cmd_write_mem(sess.buf_addr, bytes(sess.buf_len)) # zero the buffer (annoyingly expensive)
-		dentlen = await sess.cmd_syscall_helper(SyscallsAarch64.getdents64, dfd, sess.buf_addr, sess.buf_len)
+		dentlen = await sess.cmd_syscall_helper(SyscallsAarch64.getdents64, dfd, bytes(sess.buf_len), sess.buf_len)
 		if dentlen == 0:
 			break
 		dentbuf = await sess.cmd_read_mem(sess.buf_addr, dentlen)

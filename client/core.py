@@ -15,6 +15,7 @@ class BackdClientSession():
 
 		# make sure we only ever have one request in-flight at a time
 		self.request_lock = asyncio.Lock()
+		self.inflight: asyncio.Queue[asyncio.Queue[bytes|int]] = asyncio.Queue()
 
 	async def connect(self) -> None:
 		self.reader, self.writer = await asyncio.open_connection(
@@ -26,26 +27,38 @@ class BackdClientSession():
 		self.buf_addr = int.from_bytes(server_info[4:12], "little")
 		print("buffer @", hex(self.buf_addr))
 
+	async def response_loop(self) -> None:
+		while True:
+			response_len = int.from_bytes(await self.reader.readexactly(4), byteorder="little", signed=True)
+			if response_len >= 0:
+				res = await self.reader.readexactly(response_len)
+			else:
+				res = response_len
+			resq = await self.inflight.get()
+			await resq.put(res)
+
 	async def shutdown(self):
 		self.writer.close()
 		await self.writer.wait_closed()
+		self.resloop.cancel()
 
 	async def do_request(self, cmd_id: int, header: bytes, body: bytes):
+		msg = (
+			cmd_id.to_bytes(2, "little") +
+			len(header).to_bytes(2, "little") +
+			len(body).to_bytes(4, "little") +
+			header + body
+		)
 		async with self.request_lock:
-			msg = (
-				cmd_id.to_bytes(2, "little") +
-				len(header).to_bytes(2, "little") +
-				len(body).to_bytes(4, "little") +
-				header + body
-			)
 			self.writer.write(msg)
 			await self.writer.drain()
-			response_len = int.from_bytes(await self.reader.readexactly(4), byteorder="little", signed=True)
-			if response_len < 0:
-				raise Exception("request failed")
-			response = await self.reader.readexactly(response_len)
-			return response
-	
+		resq = asyncio.Queue()
+		await self.inflight.put(resq)
+		res = await resq.get()
+		if type(res) is int:
+			raise Exception("request failed")
+		return res
+
 	async def cmd_write_mem(self, addr: int, buf: bytes):
 		res = await self.do_request(
 			cmd_id=0,
@@ -87,11 +100,15 @@ class BackdClientSession():
 					int_args.append(self.buf_addr + len(buffer))
 					buffer += arg.encode() + b"\x00"
 		if buffer:
-			await self.cmd_write_mem(self.buf_addr, buffer)
-		return await self.cmd_raw_syscall(sys_no, *int_args)
+			buftask = self.cmd_write_mem(self.buf_addr, buffer)
+		syscalltask = self.cmd_raw_syscall(sys_no, *int_args)
+		if buffer:
+			await buftask
+		return await syscalltask
 
 	async def __aenter__(self) -> Self:
 		await self.connect()
+		self.resloop = asyncio.create_task(self.response_loop())
 		return self
 
 	async def __aexit__(self, exc_type, exc_val, exc_tb) -> Optional[bool]:

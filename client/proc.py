@@ -30,7 +30,6 @@ class MapEntry:
 async def get_maps(sess: BackdClientSession, pid: int) -> List[MapEntry]:
 	entries = []
 	maps = await read_file(sess, f"/proc/{pid}/maps")
-	print("maplen", len(maps))
 	for line in maps.split(b"\n")[:-1]:
 		parts = re.match(r"^([0-9a-f]+)-([0-9a-f]+) (....) ([0-9a-f]+) ..:.. [0-9]+\s+(.*)", line.decode())
 		start, end, perms, offset, name = parts.groups()

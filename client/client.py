@@ -11,19 +11,20 @@ async def main():
 		res = await sess.cmd_syscall_helper(SyscallsAarch64.write, 1, hello, len(hello))
 		print("res:", res)
 
-		pid = await pgrep(sess, "python3")
-		print("found", pid)
+		for _ in range(1): # benchmarking
+			pid = await pgrep(sess, "python3")
+			print("found", pid)
 
-		maps = await get_maps(sess, pid)
-		for map in maps:
-			if "/libc.so" in map.name:
-				print(map.name)
-				libc_base = map.start
-				break
-		else:
-			raise Exception("couldn't find libc")
-		
-		print("libc base @", hex(libc_base))
+			maps = await get_maps(sess, pid)
+			for map in maps:
+				if "/libc.so" in map.name:
+					print(map.name)
+					libc_base = map.start
+					break
+			else:
+				raise Exception("couldn't find libc")
+			
+			print("libc base @", hex(libc_base))
 
 if __name__ == "__main__":
 	asyncio.run(main())
