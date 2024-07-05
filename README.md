@@ -13,7 +13,7 @@ Current status: Planning phase.
 
 ### Implementation:
 
-The server (`backd`) will have a static buffer of fixed size (maybe around 1MB?).
+The server (`backd`) will have a static buffer of fixed size (maybe around 1MB?). (note, if you need more, you can mmap more)
 
 On a new connection, the server tells the client the memory address of the buffer, the size of the buffer, and the cpu architecture (and maybe some other stuff I haven't thought of yet). This info is length-prefixed for future compatibility.
 
