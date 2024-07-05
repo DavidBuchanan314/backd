@@ -8,14 +8,16 @@ async def listdir(sess: BackdClientSession, dir_path: str) -> List[str]:
 	# get all the dirents
 	while True:
 		dentlen = await sess.cmd_syscall_helper(SyscallsAarch64.getdents64, dfd, bytes(sess.buf_len), sess.buf_len)
+		#print("dentlen", dentlen)
 		if dentlen == 0:
 			break
 		dentbuf = await sess.cmd_read_mem(sess.buf_addr, dentlen)
 		off = 0
 		while off < len(dentbuf):
 			reclen = int.from_bytes(dentbuf[off+8+8:off+8+8+2], "little")
-			name = dentbuf[off+8+8+2+1:off+reclen-2].rstrip(b"\x00").decode()
-			entries.append(name)
+			name = dentbuf[off+8+8+2+1:off+reclen].rstrip(b"\x00")
+			#print(name)
+			entries.append(name.decode())
 			off += reclen
 
 	# close
@@ -35,6 +37,7 @@ async def read_file(sess: BackdClientSession, path: str) -> Optional[bytes]:
 	res = b""
 	while readlen := await sess.cmd_syscall_helper(SyscallsAarch64.read, fd, sess.buf_addr, sess.buf_len):	
 		if readlen < 0:
+			print("readlen error", readlen)
 			await sess.cmd_syscall_helper(SyscallsAarch64.close, fd)
 			return None
 		res += await sess.cmd_read_mem(sess.buf_addr, readlen)
