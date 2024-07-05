@@ -118,22 +118,33 @@ async def listdir(sess: BackdClientSession, dir_path: str):
 
 	return entries
 
+async def read_file(sess: BackdClientSession, path: str) -> Optional[bytes]:
+	"""
+	try to read whole file
+
+	XXX: only works if the whole file fits inside buf_len
+	"""
+	fd = await sess.cmd_syscall_helper(SyscallsAarch64.openat, 0, path, 0, 0)
+	if fd < 0:
+		return None
+	readlen = await sess.cmd_syscall_helper(SyscallsAarch64.read, fd, sess.buf_addr, sess.buf_len)
+	if readlen < 0:
+		await sess.cmd_syscall_helper(SyscallsAarch64.close, fd)
+		return None
+	assert(readlen < sess.buf_len) # TODO handle larger files
+	contents = await sess.cmd_read_mem(sess.buf_addr, readlen)
+	await sess.cmd_syscall_helper(SyscallsAarch64.close, fd)
+	return contents
+
 async def pgrep(sess: BackdClientSession, name: str) -> int:
 	name_bytes = name.encode()
 	proc_entries = await listdir(sess, "/proc")
 	for proc_entry in proc_entries:
 		if not proc_entry.isdecimal():
 			continue
-		cmdline_path = f"/proc/{proc_entry}/cmdline"
-		cmdline_fd = await sess.cmd_syscall_helper(SyscallsAarch64.openat, 0, cmdline_path, 0, 0)
-		if cmdline_fd < 0:
+		cmdline = await read_file(sess, f"/proc/{proc_entry}/cmdline")
+		if cmdline is None:
 			continue
-		cmdline_len = await sess.cmd_syscall_helper(SyscallsAarch64.read, cmdline_fd, sess.buf_addr, sess.buf_len)
-		if cmdline_len < 0:
-			await sess.cmd_syscall_helper(SyscallsAarch64.close, cmdline_fd)
-			continue
-		cmdline = await sess.cmd_read_mem(sess.buf_addr, cmdline_len)
-		await sess.cmd_syscall_helper(SyscallsAarch64.close, cmdline_fd)
 		argv = cmdline.split(b"\x00")
 		if name_bytes in argv[0]:
 			return int(proc_entry)
