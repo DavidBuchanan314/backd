@@ -11,7 +11,7 @@ async def main():
 		res = await sess.cmd_syscall_helper(SyscallsAarch64.write, 1, hello, len(hello))
 		print("res:", res)
 
-		for _ in range(1): # benchmarking
+		for _ in range(100): # benchmarking
 			pid = await pgrep(sess, "python3")
 			print("found", pid)
 

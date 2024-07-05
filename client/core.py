@@ -1,4 +1,5 @@
 import asyncio
+import socket
 from typing import List, Self, Optional
 
 class SyscallsAarch64:
@@ -21,8 +22,12 @@ class BackdClientSession():
 		self.reader, self.writer = await asyncio.open_connection(
 			self.rhost, self.rport
 		)
+		sock = self.writer.get_extra_info("socket")
+		sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
 		server_info_len = int.from_bytes(await self.reader.readexactly(4), "little")
 		server_info = await self.reader.readexactly(server_info_len)
+		#print("server_info", server_info_len, server_info)
 		self.buf_len = int.from_bytes(server_info[:4], "little")
 		self.buf_addr = int.from_bytes(server_info[4:12], "little")
 		print("buffer @", hex(self.buf_addr))
@@ -30,6 +35,7 @@ class BackdClientSession():
 	async def response_loop(self) -> None:
 		while True:
 			response_len = int.from_bytes(await self.reader.readexactly(4), byteorder="little", signed=True)
+			#print("response_len", response_len)
 			if response_len >= 0:
 				res = await self.reader.readexactly(response_len)
 			else:
@@ -50,6 +56,7 @@ class BackdClientSession():
 			header + body
 		)
 		async with self.request_lock:
+			#print("sending", msg)
 			self.writer.write(msg)
 			await self.writer.drain()
 		resq = asyncio.Queue()
