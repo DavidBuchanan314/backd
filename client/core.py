@@ -2,12 +2,16 @@ import asyncio
 import socket
 from typing import List, Self, Optional
 
-class SyscallsAarch64:
+class SyscallsAarch64: # todo: machine-import these...
 	openat = 56
 	close = 57
 	getdents64 = 61
 	read = 63
 	write = 64
+	lseek = 62
+	kill = 129
+	getpid = 172
+	gettid = 178
 
 class BackdClientSession():
 	def __init__(self, rhost:str, rport:int) -> None:
