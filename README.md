@@ -27,7 +27,7 @@ Responses similarly:
 [32-bit length]
 ```
 
-A negative response length indicates an error.
+A negative response length indicates an invalid request (note that this is distinct from a syscall returning an error value).
 
 There are just 3 request types:
 - write memory `cmd_id=0, header=[64-bit addr], body=[the data to write]`, returns empty response.
